@@ -73,6 +73,7 @@
 		75FE3C0B22CE9A3A0087E67C /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				75FE3BFD22CD5BFD0087E67C /* Virtual_Tourist.xcdatamodeld */,
 				75FE3C1122D0A1F60087E67C /* Data */,
 				75FE3C0F22CEB59A0087E67C /* DataController.swift */,
 			);
@@ -107,7 +108,6 @@
 		75FE3C1122D0A1F60087E67C /* Data */ = {
 			isa = PBXGroup;
 			children = (
-				75FE3BFD22CD5BFD0087E67C /* Virtual_Tourist.xcdatamodeld */,
 				75FE3C1222D0A2240087E67C /* VirtualTouristModel.swift */,
 			);
 			path = Data;

@@ -13,9 +13,14 @@ import CoreData
 class TravelLocationViewController: UIViewController {
 
     @IBOutlet weak var mapView: MKMapView!
+    @IBOutlet weak var editButton: UIBarButtonItem!
+    @IBOutlet weak var bottomTextLabel: UILabel!
     
     var dataController: DataController!
     var pins: [Pin] = []
+    
+    enum EditState { case editing, done}
+    var editState = EditState.done
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -30,6 +35,11 @@ class TravelLocationViewController: UIViewController {
             print(error.localizedDescription)
         }
         
+        setupMapView()
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
         setupMapView()
     }
     
@@ -59,6 +69,18 @@ class TravelLocationViewController: UIViewController {
         }
     }
 
+    @IBAction func tapEditButton() {
+        switch editState {
+        case .done:
+            editButton.title = "Done"
+            bottomTextLabel.isHidden = false
+            editState = .editing
+        case .editing:
+            editButton.title = "Edit"
+            bottomTextLabel.isHidden = true
+            editState = .done
+        }
+    }
 
 }
 
@@ -80,11 +102,11 @@ extension TravelLocationViewController {
         }
         
         // set current region
-        if VirtualTouristModel.didPostUserLocation {
+        if pins.count != 0 {
             let latitude:CLLocationDegrees = CLLocationDegrees(pins[0].latitude)
             let longitude:CLLocationDegrees = CLLocationDegrees(pins[0].longitude)
-            let latDelta:CLLocationDegrees = 0.05
-            let lonDelta:CLLocationDegrees = 0.05
+            let latDelta:CLLocationDegrees = 10
+            let lonDelta:CLLocationDegrees = 10
             let span = MKCoordinateSpan(latitudeDelta: latDelta, longitudeDelta: lonDelta)
             let location = CLLocationCoordinate2DMake(latitude, longitude)
             let region = MKCoordinateRegion(center: location, span: span)
@@ -99,7 +121,7 @@ extension TravelLocationViewController: MKMapViewDelegate {
     
     func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
         
-        let reuseId = "mapPin"
+        let reuseId = "pin"
         var pinView = mapView.dequeueReusableAnnotationView(withIdentifier: reuseId) as? MKPinAnnotationView
         
         if pinView == nil {
@@ -113,5 +135,28 @@ extension TravelLocationViewController: MKMapViewDelegate {
         }
         return pinView
     }
+    
+    func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+        print("func do something")
+        switch editState {
+        case .done:
+            // to next vc
+            print("to next")
+        case .editing:
+            if let annotation = view.annotation, let coordinate = view.annotation?.coordinate, let pinToDelete = pins.first(where: {$0.latitude == coordinate.latitude && $0.longitude == coordinate.longitude}) {
+                mapView.removeAnnotation(annotation)
+                
+                dataController.viewContext.delete(pinToDelete)
+                do {
+                    try dataController.viewContext.save()
+                } catch {
+                    print(error.localizedDescription)
+                }
+                
+                print("yes!")
+            }
+        }
+    }
+    
 }
 
