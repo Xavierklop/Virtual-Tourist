@@ -10,6 +10,9 @@ import UIKit
 import MapKit
 import CoreData
 
+let key = "f896f37933075e5a079db20bb21899f8"
+let secret = "34072b477a61a490"
+
 class TravelLocationViewController: UIViewController {
 
     @IBOutlet weak var mapView: MKMapView!
@@ -17,55 +20,48 @@ class TravelLocationViewController: UIViewController {
     @IBOutlet weak var bottomTextLabel: UILabel!
     
     var dataController: DataController!
-    var pins: [Pin] = []
+    var fetchedResultsController: NSFetchedResultsController<Pin>!
+
+    var pinForNextVC: Pin!
     
-    enum EditState { case editing, done}
+    enum EditState { case editing, done }
     var editState = EditState.done
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        let fetchRequest: NSFetchRequest<Pin> = Pin.fetchRequest()
-        let sortDescription = NSSortDescriptor(key: "creationDate", ascending: false)
-        fetchRequest.sortDescriptors = [sortDescription]
-        do {
-            let result = try dataController.viewContext.fetch(fetchRequest)
-            pins = result
-        } catch {
-            print(error.localizedDescription)
-        }
-        
+        mapView.delegate = self
+        setupFetchedResultsController()
         setupMapView()
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        
+        setupFetchedResultsController()
         setupMapView()
     }
     
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        fetchedResultsController = nil
+    }
+    
     @IBAction func longPress(_ send: UILongPressGestureRecognizer) {
-        if send.state == .began{
+        if  editState == .done && send.state == .began{
             let location = send.location(in: mapView)
             let coordinate = mapView.convert(location, toCoordinateFrom: mapView)
             
             let annotation = MKPointAnnotation()
             annotation.coordinate = coordinate
             
-            mapView.addAnnotation(annotation)
-            
-            print(coordinate.longitude)
-            
             let pin = Pin(context: dataController.viewContext)
             pin.latitude = coordinate.latitude
             pin.longitude = coordinate.longitude
-            pin.creationDate = Date()
-
-            do {
-                try dataController.viewContext.save()
-            } catch {
-                print(error.localizedDescription)
-            }
-            pins.insert(pin, at: 0)
+            pin.pages = 0
+            
+            createPhotos(by: pin)
+            persisteContext()
         }
     }
 
@@ -81,46 +77,96 @@ class TravelLocationViewController: UIViewController {
             editState = .done
         }
     }
-
-}
-
-extension TravelLocationViewController {
     
-    func setupMapView() {
-        var annotations = [MKPointAnnotation]()
+    private func createPhotos(by pin: Pin){
+        FlickrClient.searchPhotosByLocation(pin: pin) { (photosResponse, error) in
+            if let response = photosResponse {
+                pin.pages = Int32(response.photos.pages)
+                pin.photos = self.createPhotosSet(result: response.photos, pin: pin) as NSSet?
+                self.persisteContext()
+            } else {
+                print("Error happens when create assoicate photos for pin")
+            }
+        }
+    }
+    
+    private func createPhotosSet(result: PublicPhotos, pin: Pin) -> Set<Photo>? {
+        var photos = Set<Photo>()
+        if result.photo.isEmpty {
+            return nil
+        }
         
-        for dictionary in pins {
-            let lat = CLLocationDegrees(dictionary.latitude)
-            let long = CLLocationDegrees(dictionary.longitude)
+        result.photo.forEach { publicPhoto in
+            let photo = Photo(context: dataController.viewContext)
+            photo.id = publicPhoto.id
+            photo.url = publicPhoto.url
+            photo.title = publicPhoto.title
+            photo.pin = pin
+            photos.insert(photo)
+        }
+        persisteContext()
+        return photos
+    }
+    
+    fileprivate func safePerformFetch() {
+        do {
+            try fetchedResultsController.performFetch()
+        } catch {
+            fatalError("The fetch could not be performed: \(error.localizedDescription)")
+        }
+    }
+    
+    fileprivate func setupFetchedResultsController() {
+        let fetchRequest: NSFetchRequest<Pin> = Pin.fetchRequest()
+        let sortDescription = NSSortDescriptor(key: "creationDate", ascending: false)
+        fetchRequest.sortDescriptors = [sortDescription]
+        fetchedResultsController = NSFetchedResultsController(fetchRequest: fetchRequest, managedObjectContext: dataController.viewContext, sectionNameKeyPath: nil, cacheName: "pins")
+        fetchedResultsController.delegate = self
+        safePerformFetch()
+    }
+    
+    fileprivate func persisteContext() {
+        do {
+            try dataController.viewContext.save()
+        } catch {
+            print(error.localizedDescription)
+        }
+    }
+    
+    fileprivate func setupMapView() {
+        var annotations: [MKPointAnnotation] = []
+        safePerformFetch()
+        
+        guard let pins = fetchedResultsController.fetchedObjects else {
+            print("no fetch pins")
+            return
+        }
+        
+        pins.forEach { (pin) in
+            let lat = CLLocationDegrees(pin.latitude)
+            let long = CLLocationDegrees(pin.longitude)
             let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: long)
             
             let annotation = MKPointAnnotation()
             annotation.coordinate = coordinate
             
             annotations.append(annotation)
-            
-        }
-        
-        // set current region
-        if pins.count != 0 {
-            let latitude:CLLocationDegrees = CLLocationDegrees(pins[0].latitude)
-            let longitude:CLLocationDegrees = CLLocationDegrees(pins[0].longitude)
-            let latDelta:CLLocationDegrees = 10
-            let lonDelta:CLLocationDegrees = 10
-            let span = MKCoordinateSpan(latitudeDelta: latDelta, longitudeDelta: lonDelta)
-            let location = CLLocationCoordinate2DMake(latitude, longitude)
-            let region = MKCoordinateRegion(center: location, span: span)
-            mapView.setRegion(region, animated: false)
         }
         
         mapView.addAnnotations(annotations)
     }
+    
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        let vc = segue.destination as! PhotoAlbumViewController
+        vc.dataController = dataController
+        vc.pin = pinForNextVC
+    }
+
 }
 
 extension TravelLocationViewController: MKMapViewDelegate {
     
     func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        
         let reuseId = "pin"
         var pinView = mapView.dequeueReusableAnnotationView(withIdentifier: reuseId) as? MKPinAnnotationView
         
@@ -137,26 +183,49 @@ extension TravelLocationViewController: MKMapViewDelegate {
     }
     
     func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
-        print("func do something")
-        switch editState {
-        case .done:
-            // to next vc
-            print("to next")
-        case .editing:
-            if let annotation = view.annotation, let coordinate = view.annotation?.coordinate, let pinToDelete = pins.first(where: {$0.latitude == coordinate.latitude && $0.longitude == coordinate.longitude}) {
-                mapView.removeAnnotation(annotation)
+        guard let pins = fetchedResultsController.fetchedObjects else {
+            print("no fetch pins")
+            return
+        }
+        if let coordinate = view.annotation?.coordinate, let selectedPin = pins.first(where: {$0.latitude == coordinate.latitude && $0.longitude == coordinate.longitude}) {
+            
+            switch editState {
+            case .done:
+                pinForNextVC = selectedPin
+                performSegue(withIdentifier: "showPhotoAlbum", sender: self)
                 
-                dataController.viewContext.delete(pinToDelete)
-                do {
-                    try dataController.viewContext.save()
-                } catch {
-                    print(error.localizedDescription)
-                }
-                
-                print("yes!")
+            case .editing:
+                mapView.removeAnnotations(mapView.annotations)
+                dataController.viewContext.delete(selectedPin)
+                persisteContext()
+                setupMapView()
             }
+            
         }
     }
     
+}
+
+extension TravelLocationViewController: NSFetchedResultsControllerDelegate {
+    func controller(_ controller: NSFetchedResultsController<NSFetchRequestResult>, didChange anObject: Any, at indexPath: IndexPath?, for type: NSFetchedResultsChangeType, newIndexPath: IndexPath?) {
+        guard let pin = anObject as? Pin else {
+            print("In NSfetchRC, cannot fetch Pin!")
+            return
+        }
+        
+        let lat = CLLocationDegrees(pin.latitude)
+        let long = CLLocationDegrees(pin.longitude)
+        let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: long)
+        
+        let annotation = MKPointAnnotation()
+        annotation.coordinate = coordinate
+        
+        switch type {
+        case .insert:
+            mapView.addAnnotation(annotation)
+        default:
+            break
+        }
+    }
 }
 
