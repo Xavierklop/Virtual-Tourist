@@ -15,8 +15,8 @@ The following features are provided by this app:
  2. The center of the map and the zoom level can be persistent.
  3. Users can drop any number of pins on the map.
  4. Download the image of the corresponding position according to the longitude and latitude of each pin.
-### Main View controllers
-#### PhotoAlbumViewController
+## Main View controllers
+### PhotoAlbumViewController
 When the app first starts it will open to the map view. Users will be able to zoom and scroll around the map using standard pinch and drag gestures. The center of the map and the zoom level can be persistent. If the app is turned off, the map conld return to the same state when it is turned on again.
 
 Tapping and holding the map drops a new pin. Users can place any number of pins on the map. When a pin is tapped, the app will navigate to the Photo Album view associated with the pin.
